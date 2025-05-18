@@ -1,12 +1,14 @@
-name: Deploy to Render on New Docker Image
+name: Deploy to Render on Docker Hub Push
 
 on:
-  repository_dispatch:
-    types: [docker-image-pushed]
-
+  workflow_dispatch:  # Manual trigger for testing
+  registry_package:
+    types: [published]
+    
 jobs:
   deploy-to-render:
     runs-on: ubuntu-latest
+    if: github.event.repository.full_name == 'ionutms/3d-model-server' && github.event.action == 'published' && github.event.target.tag == 'latest'
     steps:
       - name: Deploy to Render
         run: |
