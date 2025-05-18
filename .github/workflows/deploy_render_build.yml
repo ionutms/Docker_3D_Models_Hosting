@@ -1,15 +1,53 @@
-name: Deploy to Render on Docker Hub Push
+name: Deploy to Render on New Docker Image
 
 on:
-  workflow_dispatch:  # Manual trigger for testing
-  registry_package:
-    types: [published]
-    
+  repository_dispatch:
+    types: [docker-image-pushed]
+
 jobs:
-  deploy-to-render:
+  debug-payload:
     runs-on: ubuntu-latest
-    if: github.event.repository.full_name == 'ionutms/3d-model-server' && github.event.action == 'published' && github.event.target.tag == 'latest'
     steps:
-      - name: Deploy to Render
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
         run: |
+          echo "$GITHUB_CONTEXT"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Client payload: ${{ toJson(github.event.client_payload) }}"
+  
+  deploy-to-render:
+    needs: debug-payload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract image information
+        id: image_info
+        run: |
+          # For debugging
+          echo "Full payload: ${{ toJson(github.event.client_payload) }}"
+          
+          # Extract values with fallbacks in case they're missing
+          IMAGE_NAME="${{ github.event.client_payload.image_name || github.event.client_payload.repository || 'unknown' }}"
+          IMAGE_TAG="${{ github.event.client_payload.image_tag || github.event.client_payload.tag || 'unknown' }}"
+          
+          echo "Received notification for image: $IMAGE_NAME:$IMAGE_TAG"
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          
+      - name: Deploy to Render if matching image
+        if: |
+          (steps.image_info.outputs.image_name == 'ionutms/3d-model-server' || 
+           steps.image_info.outputs.image_name == 'docker.io/ionutms/3d-model-server') && 
+          steps.image_info.outputs.image_tag == 'latest'
+        run: |
+          echo "Deploying ionutms/3d-model-server:latest to Render"
           curl -X POST "https://api.render.com/deploy/srv-YOUR_SERVICE_ID?key=${{ secrets.RENDER_DEPLOY_KEY }}"
+      
+      - name: Skip deployment for non-matching image
+        if: |
+          !(steps.image_info.outputs.image_name == 'ionutms/3d-model-server' || 
+            steps.image_info.outputs.image_name == 'docker.io/ionutms/3d-model-server') || 
+          steps.image_info.outputs.image_tag != 'latest'
+        run: |
+          echo "Skipping deployment - received notification for ${{ steps.image_info.outputs.image_name }}:${{ steps.image_info.outputs.image_tag }}"
+          echo "Expected target image: ionutms/3d-model-server:latest"
