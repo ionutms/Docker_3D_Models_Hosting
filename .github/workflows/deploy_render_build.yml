@@ -1,122 +1,19 @@
-name: Deploy to Render on New Docker Image
+name: Deploy 3D Model Server to Render
 
-# This workflow triggers when Docker Hub pushes a new image to your repository
-# It can also be triggered manually for testing purposes
 on:
-  repository_dispatch:
-    types: [docker-image-pushed]
   workflow_dispatch:
-    inputs:
-      image_name:
-        description: 'Docker image name'
-        required: true
-        default: 'ionutms/3d-model-server'
-      image_tag:
-        description: 'Docker image tag'
-        required: true
-        default: 'latest'
+
+env:
+  TARGET_IMAGE: 'ionutms/3d-model-server'
+  TARGET_TAG: 'latest'
+  RENDER_SERVICE_ID: 'srv-d0kqre7fte5s738u21mg'
 
 jobs:
-  # First job: Debug information to help troubleshoot any issues
-  debug-webhook:
-    runs-on: ubuntu-latest
-    steps:
-      # This step logs the complete GitHub context for debugging
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJSON(github) }}
-        run: |
-          echo "==================== GITHUB CONTEXT ===================="
-          echo "$GITHUB_CONTEXT"
-          echo "========================================================"
-      
-      # This step shows what data Docker Hub sent us (for webhook triggers)
-      - name: Dump event data
-        if: github.event_name == 'repository_dispatch'
-        run: |
-          echo "==================== EVENT PAYLOAD ===================="
-          echo "Event type: ${{ github.event.action }}"
-          echo "Client payload: ${{ toJSON(github.event.client_payload) }}"
-          echo "====================================================="
-      
-      # This step shows what inputs were provided (for manual triggers)
-      - name: Dump workflow dispatch inputs
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "================ WORKFLOW DISPATCH INPUTS ================"
-          echo "Image name: ${{ github.event.inputs.image_name }}"
-          echo "Image tag: ${{ github.event.inputs.image_tag }}"
-          echo "=========================================================="
-  
-  # Second job: Handle the actual deployment logic
   deploy-to-render:
-    needs: debug-webhook  # Wait for debug job to complete first
     runs-on: ubuntu-latest
     steps:
-      # This step figures out which Docker image we're dealing with
-      # It handles both webhook triggers (from Docker Hub) and manual triggers
-      - name: Extract image information
-        id: image_info
-        run: |
-          # Determine source of image information based on event type
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            # For manual triggers, use the input parameters
-            IMAGE_NAME="${{ github.event.inputs.image_name }}"
-            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
-          else
-            # For webhook triggers - Docker Hub may send different field names
-            # We check multiple possible field names to be flexible
-            IMAGE_NAME="${{ github.event.client_payload.image_name || github.event.client_payload.repository || github.event.client_payload.repo || github.event.client_payload.image || 'unknown' }}"
-            IMAGE_TAG="${{ github.event.client_payload.image_tag || github.event.client_payload.tag || 'unknown' }}"
-          fi
-          
-          # Remove potential registry prefix (docker.io/) for comparison
-          # This ensures we compare just the image name without registry details
-          CLEAN_IMAGE_NAME=$(echo "$IMAGE_NAME" | sed 's|^docker.io/||')
-          
-          echo "Received notification for image: $IMAGE_NAME:$IMAGE_TAG"
-          echo "Clean image name for comparison: $CLEAN_IMAGE_NAME"
-          
-          # Export variables for use in subsequent steps
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
-          echo "clean_image_name=$CLEAN_IMAGE_NAME" >> $GITHUB_OUTPUT
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          
-      # This step checks if the received image matches our target
-      # We only want to deploy specific images to avoid accidental deployments
-      - name: Check if image matches target
-        id: image_check
-        run: |
-          # Define what image we want to trigger deployments for
-          TARGET_IMAGE="ionutms/3d-model-server"
-          TARGET_TAG="latest"
-          CLEAN_IMAGE="${{ steps.image_info.outputs.clean_image_name }}"
-          ACTUAL_TAG="${{ steps.image_info.outputs.image_tag }}"
-          
-          echo "Comparing received image: $CLEAN_IMAGE:$ACTUAL_TAG"
-          echo "With target image: $TARGET_IMAGE:$TARGET_TAG"
-          
-          # Only proceed if both image name and tag match exactly
-          if [[ "$CLEAN_IMAGE" == "$TARGET_IMAGE" && "$ACTUAL_TAG" == "$TARGET_TAG" ]]; then
-            echo "✅ Image matches target. Will proceed with deployment."
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Image does not match target. Will skip deployment."
-            echo "should_deploy=false" >> $GITHUB_OUTPUT
-          fi
-      
-      # This step performs the actual deployment to Render
-      # It only runs if the image check passed
       - name: Deploy to Render
-        if: steps.image_check.outputs.should_deploy == 'true'
         run: |
-          echo "Deploying ${{ steps.image_info.outputs.clean_image_name }}:${{ steps.image_info.outputs.image_tag }} to Render"
-          # Make the API call to trigger deployment on Render
-          # Using GitHub secret for the deploy key to keep it secure
-          curl -X POST "https://api.render.com/deploy/srv-d0kqre7fte5s738u21mg?key=${{ secrets.RENDER_DEPLOY_KEY }}"
-      
-      # This step logs why deployment was skipped (if it was skipped)
-      - name: Skip deployment
-        if: steps.image_check.outputs.should_deploy != 'true'
-        run: |
-          echo "Skipping deployment - received image ${{ steps.image_info.outputs.image_name }}:${{ steps.image_info.outputs.image_tag }} does not match target ionutms/3d-model-server:latest"
+          echo "✅ Deploying $TARGET_IMAGE:$TARGET_TAG to Render..."
+          curl -X POST "https://api.render.com/deploy/$RENDER_SERVICE_ID?key=${{ secrets.RENDER_DEPLOY_KEY }}"
+          echo "Deployment triggered successfully!"
