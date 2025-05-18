@@ -1,7 +1,9 @@
 name: Deploy 3D Model Server to Render
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger
+  schedule:
+    - cron: '* * * * *'  # Run every minute
 
 env:
   TARGET_IMAGE: 'ionutms/3d-model-server'
@@ -9,11 +11,69 @@ env:
   RENDER_SERVICE_ID: 'srv-d0kqre7fte5s738u21mg'
 
 jobs:
-  deploy-to-render:
+  check-and-deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Configure Docker CLI for experimental features
+        run: |
+          mkdir -p ~/.docker
+          echo '{"experimental": "enabled"}' > ~/.docker/config.json
+          export DOCKER_CLI_EXPERIMENTAL=enabled
+      
+      - name: Extract current Docker image digest
+        id: get-digest
+        run: |
+          # Enable experimental features for manifest command
+          export DOCKER_CLI_EXPERIMENTAL=enabled
+          
+          # Pull the manifest for the target image
+          echo "Fetching manifest for $TARGET_IMAGE:$TARGET_TAG"
+          docker manifest inspect $TARGET_IMAGE:$TARGET_TAG > manifest.json
+          
+          # Extract the digest using jq
+          CURRENT_DIGEST=$(cat manifest.json | jq -r '.config.digest')
+          echo "Current image digest: $CURRENT_DIGEST"
+          echo "current_digest=$CURRENT_DIGEST" >> $GITHUB_OUTPUT
+          
+          # Create digest file path for tracking in the repository
+          DIGEST_FILE="deployments/last_deployed_digest.txt"
+          mkdir -p $(dirname $DIGEST_FILE)
+          
+          # Check if a previous digest exists
+          if [ -f "$DIGEST_FILE" ]; then
+            STORED_DIGEST=$(cat $DIGEST_FILE)
+            echo "Last deployed digest: $STORED_DIGEST"
+            
+            if [ "$CURRENT_DIGEST" != "$STORED_DIGEST" ]; then
+              echo "Image has changed! New deployment needed."
+              echo "deploy=true" >> $GITHUB_OUTPUT
+            else
+              echo "No changes in image digest. Skipping deployment."
+              echo "deploy=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No previous digest found. This appears to be the first deployment."
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Deploy to Render
+        if: steps.get-digest.outputs.deploy == 'true'
         run: |
           echo "✅ Deploying $TARGET_IMAGE:$TARGET_TAG to Render..."
           curl -X POST "https://api.render.com/deploy/$RENDER_SERVICE_ID?key=${{ secrets.RENDER_DEPLOY_KEY }}"
           echo "Deployment triggered successfully!"
+      
+      - name: Update stored digest
+        if: steps.get-digest.outputs.deploy == 'true'
+        run: |
+          DIGEST_FILE="deployments/last_deployed_digest.txt"
+          echo "${{ steps.get-digest.outputs.current_digest }}" > $DIGEST_FILE
+          
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "GitHub Actions"
+          git add $DIGEST_FILE
+          git commit -m "Update deployed image digest [skip ci]"
+          git push
