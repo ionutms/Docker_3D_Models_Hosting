@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Repository</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1, h2 {
+            border-bottom: 2px solid #eaeaea;
+            padding-bottom: 10px;
+        }
+        .model-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .model-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            transition: all 0.3s ease;
+        }
+        .model-card:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transform: translateY(-5px);
+        }
+        .model-name {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .model-link {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .model-link:hover {
+            text-decoration: underline;
+        }
+        .instructions {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        code {
+            background-color: #eee;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>3D Model Repository</h1>
+    <p>Welcome to the 3D model repository. Here you can find all the available 3D models that can be accessed via direct URLs.</p>
+    
+    <div class="instructions">
+        <h2>How to Use These Models</h2>
+        <p>Each model can be accessed directly via its URL. For example:</p>
+        <code>https://your-app.onrender.com/models/model-name.glb</code>
+        
+        <p>You can use these URLs to:</p>
+        <ul>
+            <li>Link directly to models in applications</li>
+            <li>Embed them in websites using libraries like Three.js or model-viewer</li>
+            <li>Share them with others who need access to your 3D assets</li>
+        </ul>
+    </div>
+    
+    <h2>Available Models</h2>
+    <p>Browse all models in the <a href="/models/" class="model-link">models directory</a>.</p>
+    
+    <!-- This section can be dynamically generated with a script or manually updated -->
+    <div class="model-container" id="model-list">
+        <!-- Example cards (you can add these manually or generate them) -->
+        <!-- 
+        <div class="model-card">
+            <div class="model-name">Example Model</div>
+            <a href="/models/example.glb" class="model-link">View/Download Model</a>
+        </div>
+        -->
+    </div>
+
+    <script>
+        // This script can be enhanced to dynamically load model listings
+        // For now, it's a placeholder that could be expanded
+        window.addEventListener('DOMContentLoaded', () => {
+            // If you implement server-side listing generation, you can fetch it here
+            // fetch('/api/models').then(response => response.json()).then(models => {
+            //     const modelList = document.getElementById('model-list');
+            //     models.forEach(model => {
+            //         // Add model cards dynamically
+            //     });
+            // });
+        });
+    </script>
+</body>
+</html>
