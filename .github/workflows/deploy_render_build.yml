@@ -1,0 +1,15 @@
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: your-registry/your-image:latest
+          
+      - name: Trigger Render deployment
+        run: |
+          curl -X POST "https://api.render.com/deploy/srv-YOUR_SERVICE_ID?key=${{ secrets.RENDER_DEPLOY_KEY }}"
