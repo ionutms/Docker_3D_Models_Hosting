@@ -1,9 +1,13 @@
+
 name: Deploy 3D Model Server to Render
 
 on:
   workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main  # Run on commits to main branch
   schedule:
-    - cron: '* * * * *'  # Run every minute
+    - cron: '*/5 * * * *'  # Run every 5 minutes
 
 env:
   TARGET_IMAGE: 'ionutms/3d-model-server'
