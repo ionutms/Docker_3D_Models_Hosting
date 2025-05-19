@@ -1,24 +1,22 @@
-"""
-Docker Image Pull and Extract Script
+"""Docker Image Pull and Extract Script.
 
 This script:
 1. Pulls the ionutms/3d-model-server:latest Docker image
 2. Extracts files from the /usr/share/nginx/html/models directory in the image
 3. Saves the extracted files to a local directory
 
-It displays progress information during operations and handles potential errors.
 """
 
-import docker
-import os
-import tarfile
 import io
+import os
 import shutil
+import tarfile
+
+import docker
 
 
 def pull_docker_image(image_name):
-    """
-    Pull a Docker image and display progress information.
+    """Pull a Docker image and display progress information.
 
     Args:
         image_name (str):
@@ -79,12 +77,12 @@ def pull_docker_image(image_name):
 
 
 def extract_models_from_image(image_name, input_dir, output_dir):
-    """
-    Extract files from the /usr/share/nginx/html/models directory in the Docker image.
+    """Extract files from a Docker image and save them to a local directory.
 
     Args:
         image_name (str): The name of the Docker image to extract files from
-        input_dir (str): The directory inside the Docker image to extract files from
+        input_dir (str):
+            The directory inside the Docker image to extract files from
         output_dir (str): The local directory to save extracted files to
 
     Returns:
@@ -113,8 +111,6 @@ def extract_models_from_image(image_name, input_dir, output_dir):
 
         # Extract all files from the tar archive
         with tarfile.open(fileobj=tar_stream) as tar:
-            # The archive will have a directory structure, so we need to handle that
-            # Get all members of the tar archive
             members = tar.getmembers()
 
             if not members:
@@ -126,7 +122,6 @@ def extract_models_from_image(image_name, input_dir, output_dir):
 
             # Extract all files, preserving directory structure
             for member in members:
-                # Get the original path and modify it to remove the base directory
                 orig_path = member.name
                 # The first part will be 'models', so we remove that
                 parts = orig_path.split("/", 1)
