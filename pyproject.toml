@@ -7,3 +7,51 @@ requires-python = ">=3.13"
 dependencies = [
     "docker>=7.1.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.3.0",
+]
+
+[tool.ruff]
+# Target Python version
+target-version = "py313"
+# Line length to enforce
+line-length = 80
+# Files and directories to exclude
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# Enable recommended rules + extra quality and style rules
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "B",  # flake8-bugbear
+    "I",  # isort
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "D",  # pydocstyle (docstring rules)
+]
+# Rules to explicitly ignore
+ignore = [
+    "D203",  # 'one-blank-line-before-class' (incompatible with D211)
+    "D213",  # 'multi-line-summary-second-line' (incompatible with D212)
+]
+
+[tool.ruff.lint.pydocstyle]
+# Use Google-style docstrings
+convention = "google"
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Indent with 4 spaces
+indent-style = "space"
+# Line endings style
+line-ending = "auto"
