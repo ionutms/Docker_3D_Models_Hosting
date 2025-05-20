@@ -232,6 +232,49 @@ def build_docker_image(image_name, dockerfile_path="."):
         return False
 
 
+def push_docker_image(local_image, remote_image):
+    """Push a Docker image to a remote registry.
+
+    Args:
+        local_image (str): The name of the local image to push
+        remote_image (str): The name of the remote image (including registry)
+
+    Returns:
+        bool: True if successful, False otherwise
+
+    """
+    client = docker.from_env()
+
+    try:
+        print(f"Tagging image {local_image} as {remote_image}...")
+        image = client.images.get(local_image)
+        image.tag(remote_image)
+
+        print(f"Pushing image {remote_image} to registry...\n")
+        push_logs = client.images.push(remote_image, stream=True, decode=True)
+
+        for entry in push_logs:
+            if "status" in entry and "id" in entry:
+                line = f"{entry['id']}: {entry['status']}"
+                if "progress" in entry:
+                    line += f" {entry['progress']}"
+                print(line)
+            elif "status" in entry:
+                print(entry["status"])
+            elif "error" in entry:
+                print(f"Error: {entry['error']}")
+                break
+
+        print("\n✅ Image pushed successfully.")
+
+    except docker.errors.ImageNotFound:
+        print(f"Error: Image '{local_image}' not found.")
+    except docker.errors.APIError as e:
+        print(f"Docker API error: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+
 if __name__ == "__main__":
     # The specific image to pull and rebuild
     IMAGE_NAME = "ionutms/3d-model-server:latest"
@@ -248,3 +291,8 @@ if __name__ == "__main__":
 
     # Rebuild the Docker image from the Dockerfile in the current directory
     build_docker_image(IMAGE_NAME)
+
+    push_docker_image(
+        IMAGE_NAME,
+        "ionutms/3d-model-server:latest",
+    )
