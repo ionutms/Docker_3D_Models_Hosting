@@ -284,15 +284,10 @@ if __name__ == "__main__":
 
     # Extract models from the image
     extract_models_from_image(
-        IMAGE_NAME,
-        "/usr/share/nginx/html/models",
-        "./models",
+        IMAGE_NAME, "/usr/share/nginx/html/models", "./models"
     )
 
     # Rebuild the Docker image from the Dockerfile in the current directory
     build_docker_image(IMAGE_NAME)
 
-    push_docker_image(
-        IMAGE_NAME,
-        "ionutms/3d-model-server:latest",
-    )
+    push_docker_image(IMAGE_NAME, IMAGE_NAME)
