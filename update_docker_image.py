@@ -1,9 +1,10 @@
-"""Docker Image Pull and Extract Script.
+"""Docker Image Pull, Extract, and Build Script.
 
 This script:
 1. Pulls the ionutms/3d-model-server:latest Docker image
 2. Extracts files from the /usr/share/nginx/html/models directory in the image
 3. Saves the extracted files to a local directory
+4. Rebuilds the Docker image from a provided Dockerfile
 
 """
 
@@ -29,10 +30,6 @@ def pull_docker_image(image_name):
     client = docker.from_env()
 
     print(f"Pulling Docker image: {image_name}")
-    print(
-        "This may take a while depending on your "
-        "internet connection and the image size...\n"
-    )
 
     try:
         # Pull the image with progress information
@@ -174,8 +171,69 @@ def extract_models_from_image(image_name, input_dir, output_dir):
         return False
 
 
+def build_docker_image(image_name, dockerfile_path="."):
+    """Build a Docker image from a Dockerfile with the --no-cache option.
+
+    Args:
+        image_name (str): The name (and optionally tag) for the built image
+        dockerfile_path (str):
+            The path to the directory containing the Dockerfile
+            (defaults to current directory)
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    # Initialize the Docker client
+    client = docker.from_env()
+
+    print(f"Building Docker image: {image_name}")
+
+    try:
+        _, build_logs = client.images.build(
+            path=dockerfile_path,
+            tag=image_name,
+            nocache=True,
+            pull=False,
+            rm=True,
+        )
+
+        # Display build logs
+        for log_line in build_logs:
+            if "stream" in log_line:
+                # Remove trailing newlines for cleaner output
+                log_text = log_line["stream"].rstrip()
+                if log_text:
+                    print(log_text)
+
+        # Verify the image was built successfully
+        images = client.images.list()
+        image_found = any(
+            image_name in img.tags for img in images if img.tags
+        )
+
+        if image_found:
+            print(f"\nSuccessfully built {image_name}")
+            return True
+        else:
+            print(
+                f"\nWarning: Cannot verify if {image_name} "
+                "was built successfully."
+            )
+            return False
+
+    except docker.errors.BuildError as e:
+        print(f"Error building Docker image: {e}")
+        return False
+    except docker.errors.APIError as e:
+        print(f"Docker API error: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return False
+
+
 if __name__ == "__main__":
-    # The specific image to pull
+    # The specific image to pull and rebuild
     IMAGE_NAME = "ionutms/3d-model-server:latest"
 
     # Pull the Docker image
@@ -187,3 +245,6 @@ if __name__ == "__main__":
         "/usr/share/nginx/html/models",
         "./models",
     )
+
+    # Rebuild the Docker image from the Dockerfile in the current directory
+    build_docker_image(IMAGE_NAME)
