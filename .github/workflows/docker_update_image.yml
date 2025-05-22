@@ -76,6 +76,10 @@ jobs:
           # Create models directory if it doesn't exist
           mkdir -p ${{ env.MODELS_DIR }}
           
+          # Count files before moving
+          NEW_FILE_COUNT=$(find ${{ env.NEW_MODELS_DIR }} -type f | wc -l)
+          echo "Found ${NEW_FILE_COUNT} files to move from new_models directory"
+          
           # Move files while preserving directory structure
           find ${{ env.NEW_MODELS_DIR }} -type f -print0 | while IFS= read -r -d '' file; do
             # Get relative path from new_models directory
@@ -86,17 +90,41 @@ jobs:
             target_dir=$(dirname "${target_file}")
             mkdir -p "${target_dir}"
             
-            # Copy file and report
+            # Check if file exists and report overwrite
+            if [ -f "${target_file}" ]; then
+              echo "Overwriting: ${rel_path}"
+            else
+              echo "Adding: ${rel_path}"
+            fi
+            
+            # Copy file
             cp "${file}" "${target_file}"
-            echo "Copied: ${rel_path}"
           done
           
           # Remove files from new_models but keep directory structure
           find ${{ env.NEW_MODELS_DIR }} -type f -delete
           
-          echo "✅ Successfully moved new model files"
+          echo "✅ Successfully moved ${NEW_FILE_COUNT} files from new_models to models directory"
         else
           echo "ℹ️ No new models to move (directory doesn't exist or is empty)"
+        fi
+
+    - name: Verify models directory contents
+      run: |
+        if [ -d "${{ env.MODELS_DIR }}" ]; then
+          echo "Final models directory contents:"
+          TOTAL_FILES=$(find ${{ env.MODELS_DIR }} -type f | wc -l)
+          echo "Total files in models directory: ${TOTAL_FILES}"
+          
+          if [ ${TOTAL_FILES} -gt 0 ]; then
+            echo "Sample files:"
+            find ${{ env.MODELS_DIR }} -type f | head -10
+            echo "..."
+          else
+            echo "⚠️ Warning: No files found in models directory"
+          fi
+        else
+          echo "⚠️ Warning: Models directory does not exist"
         fi
 
     - name: Verify Dockerfile exists
