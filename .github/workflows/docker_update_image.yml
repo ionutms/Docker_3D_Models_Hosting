@@ -12,6 +12,8 @@ on:
     paths:
       - 'Dockerfile'
       - 'new_models/**'
+  repository_dispatch:
+    types: [kicad-3d-models-ready]
 
 env:
   IMAGE_NAME: ionutms/3d-model-server:latest
@@ -25,6 +27,35 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Download 3D models from source repository
+      if: github.event_name == 'repository_dispatch'
+      uses: dawidd6/action-download-artifact@v3
+      with:
+        github_token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        workflow: generate_kicad_3d_models.yml
+        repo: ${{ github.event.client_payload.source_repo }}
+        run_id: ${{ github.event.client_payload.run_id }}
+        name: ${{ github.event.client_payload.artifact_name }}
+        path: ${{ env.NEW_MODELS_DIR }}/${{ github.event.client_payload.project_name }}
+
+    - name: Verify downloaded artifacts
+      if: github.event_name == 'repository_dispatch'
+      run: |
+        PROJECT_NAME="${{ github.event.client_payload.project_name }}"
+        ARTIFACT_PATH="${{ env.NEW_MODELS_DIR }}/${PROJECT_NAME}"
+        
+        if [ -d "$ARTIFACT_PATH" ]; then
+          echo "✅ Successfully downloaded artifacts to $ARTIFACT_PATH"
+          echo "Contents:"
+          find "$ARTIFACT_PATH" -type f -exec ls -la {} \;
+          
+          FILE_COUNT=$(find "$ARTIFACT_PATH" -type f | wc -l)
+          echo "Total files downloaded: ${FILE_COUNT}"
+        else
+          echo "❌ Failed to download artifacts or directory not found"
+          exit 1
+        fi
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -171,4 +202,10 @@ jobs:
       run: |
         echo "🎉 Docker image update workflow completed successfully!"
         echo "Image: ${{ env.IMAGE_NAME }}"
+        
+        if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+          echo "Triggered by KiCad 3D model generation from: ${{ github.event.client_payload.source_repo }}"
+          echo "Project: ${{ github.event.client_payload.project_name }}"
+        fi
+        
         echo "Built and pushed with latest models and changes"
