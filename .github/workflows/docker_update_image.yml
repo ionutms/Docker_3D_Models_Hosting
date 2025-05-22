@@ -1,0 +1,146 @@
+name: Update Docker Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - 'new_models/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - 'new_models/**'
+
+env:
+  IMAGE_NAME: ionutms/3d-model-server:latest
+  MODELS_DIR: ./models
+  NEW_MODELS_DIR: ./new_models
+
+jobs:
+  update-docker-image:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+
+    - name: Pull existing Docker image
+      run: |
+        echo "Pulling Docker image: ${{ env.IMAGE_NAME }}"
+        docker pull ${{ env.IMAGE_NAME }}
+
+    - name: Extract models from existing image
+      run: |
+        echo "Extracting model files from ${{ env.IMAGE_NAME }}..."
+        
+        # Create models directory
+        mkdir -p ${{ env.MODELS_DIR }}
+        
+        # Create a temporary container to extract files
+        CONTAINER_ID=$(docker create ${{ env.IMAGE_NAME }})
+        
+        # Extract the models directory from the container
+        if docker cp ${CONTAINER_ID}:/usr/share/nginx/html/models/. ${{ env.MODELS_DIR }}/; then
+          echo "✅ Successfully extracted model files to ${{ env.MODELS_DIR }}"
+          
+          # List extracted files
+          echo "Extracted files:"
+          find ${{ env.MODELS_DIR }} -type f | head -20
+          
+          # Show total count
+          FILE_COUNT=$(find ${{ env.MODELS_DIR }} -type f | wc -l)
+          echo "Total files extracted: ${FILE_COUNT}"
+        else
+          echo "⚠️ No models directory found in image or extraction failed"
+        fi
+        
+        # Clean up the temporary container
+        docker rm ${CONTAINER_ID}
+
+    - name: Move new models to models directory
+      run: |
+        if [ -d "${{ env.NEW_MODELS_DIR }}" ] && [ "$(ls -A ${{ env.NEW_MODELS_DIR }})" ]; then
+          echo "Moving files from ${{ env.NEW_MODELS_DIR }} to ${{ env.MODELS_DIR }}..."
+          
+          # Create models directory if it doesn't exist
+          mkdir -p ${{ env.MODELS_DIR }}
+          
+          # Move files while preserving directory structure
+          find ${{ env.NEW_MODELS_DIR }} -type f -print0 | while IFS= read -r -d '' file; do
+            # Get relative path from new_models directory
+            rel_path=${file#${{ env.NEW_MODELS_DIR }}/}
+            target_file="${{ env.MODELS_DIR }}/${rel_path}"
+            
+            # Create target directory if needed
+            target_dir=$(dirname "${target_file}")
+            mkdir -p "${target_dir}"
+            
+            # Copy file and report
+            cp "${file}" "${target_file}"
+            echo "Copied: ${rel_path}"
+          done
+          
+          # Remove files from new_models but keep directory structure
+          find ${{ env.NEW_MODELS_DIR }} -type f -delete
+          
+          echo "✅ Successfully moved new model files"
+        else
+          echo "ℹ️ No new models to move (directory doesn't exist or is empty)"
+        fi
+
+    - name: Verify Dockerfile exists
+      run: |
+        if [ ! -f "Dockerfile" ]; then
+          echo "❌ Error: Dockerfile not found in repository root"
+          exit 1
+        fi
+        echo "✅ Dockerfile found"
+
+    - name: Build Docker image
+      run: |
+        echo "Building Docker image: ${{ env.IMAGE_NAME }}"
+        docker build --no-cache --pull=false --rm -t ${{ env.IMAGE_NAME }} .
+        echo "✅ Successfully built ${{ env.IMAGE_NAME }}"
+
+    - name: Push Docker image
+      run: |
+        echo "Pushing image ${{ env.IMAGE_NAME }} to registry..."
+        docker push ${{ env.IMAGE_NAME }}
+        echo "✅ Image pushed successfully"
+
+    - name: Clean up local model files
+      run: |
+        if [ -d "${{ env.MODELS_DIR }}" ]; then
+          echo "Cleaning up local model files from ${{ env.MODELS_DIR }}..."
+          
+          # Count files before cleanup
+          FILE_COUNT=$(find ${{ env.MODELS_DIR }} -type f | wc -l)
+          
+          # Remove all files but keep directory structure
+          find ${{ env.MODELS_DIR }} -type f -delete
+          
+          # Remove empty directories (except the root models directory)
+          find ${{ env.MODELS_DIR }} -type d -empty -not -path "${{ env.MODELS_DIR }}" -delete
+          
+          echo "✅ Successfully removed ${FILE_COUNT} files from ${{ env.MODELS_DIR }}"
+          echo "The ${{ env.MODELS_DIR }} directory has been preserved but is now empty"
+        else
+          echo "ℹ️ No models directory to clean up"
+        fi
+
+    - name: Summary
+      run: |
+        echo "🎉 Docker image update workflow completed successfully!"
+        echo "Image: ${{ env.IMAGE_NAME }}"
+        echo "Built and pushed with latest models and changes"
