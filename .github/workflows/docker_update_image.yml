@@ -28,6 +28,35 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Get latest successful workflow run
+      if: github.event_name == 'repository_dispatch'
+      id: get_latest_run
+      run: |
+        echo "Getting latest successful workflow run for: ${{ github.event.client_payload.source_repo }}"
+        
+        # Get the latest successful workflow run
+        LATEST_RUN=$(curl -s \
+          -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/workflows/generate_kicad_3d_models.yml/runs?status=success&per_page=1" \
+          | jq -r '.workflow_runs[0]')
+        
+        if [ "$LATEST_RUN" = "null" ]; then
+          echo "❌ No successful workflow runs found"
+          exit 1
+        fi
+        
+        LATEST_RUN_ID=$(echo "$LATEST_RUN" | jq -r '.id')
+        LATEST_RUN_DATE=$(echo "$LATEST_RUN" | jq -r '.created_at')
+        LATEST_RUN_COMMIT=$(echo "$LATEST_RUN" | jq -r '.head_sha[:7]')
+        
+        echo "✅ Found latest successful run:"
+        echo "  Run ID: $LATEST_RUN_ID"
+        echo "  Date: $LATEST_RUN_DATE"
+        echo "  Commit: $LATEST_RUN_COMMIT"
+        
+        echo "latest_run_id=$LATEST_RUN_ID" >> $GITHUB_OUTPUT
+
     - name: Download 3D models from source repository
       if: github.event_name == 'repository_dispatch'
       uses: dawidd6/action-download-artifact@v3
@@ -35,12 +64,7 @@ jobs:
         github_token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         workflow: generate_kicad_3d_models.yml
         repo: ${{ github.event.client_payload.source_repo }}
-        branch: main
-        workflow_conclusion: success
-        check_artifacts: true
-        search_artifacts: true
-        skip_unpack: false
-        if_no_artifact_found: fail
+        run_id: ${{ steps.get_latest_run.outputs.latest_run_id }}
         name: ${{ github.event.client_payload.artifact_name }}
         path: ${{ env.NEW_MODELS_DIR }}/${{ github.event.client_payload.project_name }}
 
