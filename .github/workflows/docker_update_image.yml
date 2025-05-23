@@ -35,7 +35,7 @@ jobs:
         github_token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         workflow: generate_kicad_3d_models.yml
         repo: ${{ github.event.client_payload.source_repo }}
-        run_id: ${{ github.event.client_payload.run_id }}
+        workflow_conclusion: success
         name: ${{ github.event.client_payload.artifact_name }}
         path: ${{ env.NEW_MODELS_DIR }}/${{ github.event.client_payload.project_name }}
 
