@@ -43,8 +43,11 @@ jobs:
         
         FOUND_RUN_ID=""
         
+        # Get list of run IDs into an array to avoid pipe subshell issues
+        RUN_IDS=$(echo "$RUNS_JSON" | jq -r '.workflow_runs[].id')
+        
         # Check each successful run for the required artifacts
-        echo "$RUNS_JSON" | jq -r '.workflow_runs[].id' | while read -r run_id; do
+        for run_id in $RUN_IDS; do
           if [ -n "$run_id" ] && [ -z "$FOUND_RUN_ID" ]; then
             echo "Checking run $run_id for artifacts..."
             
@@ -60,7 +63,6 @@ jobs:
             if [ -n "$ARTIFACT_EXISTS" ]; then
               echo "✅ Found required artifact in run $run_id"
               FOUND_RUN_ID="$run_id"
-              echo "latest_run_id=$run_id" >> $GITHUB_OUTPUT
               break
             else
               echo "Required artifact not found in run $run_id"
@@ -72,6 +74,8 @@ jobs:
           echo "❌ No successful workflow run with required artifacts found"
           exit 1
         fi
+        
+        echo "latest_run_id=$FOUND_RUN_ID" >> $GITHUB_OUTPUT
         
         # Get run details for logging
         RUN_DETAILS=$(curl -s \
