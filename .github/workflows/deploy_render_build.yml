@@ -1,4 +1,3 @@
-
 name: Deploy 3D Model Server to Render
 
 on:
@@ -8,6 +7,8 @@ on:
       - main  # Run on commits to main branch
   schedule:
     - cron: '0 * * * *'  # Run at the start of every hour
+  repository_dispatch:
+    types: [docker-image-updated]  # Add this trigger
 
 env:
   TARGET_IMAGE: 'ionutms/3d-model-server'
@@ -46,8 +47,11 @@ jobs:
           DIGEST_FILE="deployments/last_deployed_digest.txt"
           mkdir -p $(dirname $DIGEST_FILE)
           
-          # Check if a previous digest exists
-          if [ -f "$DIGEST_FILE" ]; then
+          # Check if a previous digest exists or if triggered by repository dispatch
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "Triggered by repository dispatch - forcing deployment"
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          elif [ -f "$DIGEST_FILE" ]; then
             STORED_DIGEST=$(cat $DIGEST_FILE)
             echo "Last deployed digest: $STORED_DIGEST"
             
@@ -67,6 +71,14 @@ jobs:
         if: steps.get-digest.outputs.deploy == 'true'
         run: |
           echo "✅ Deploying $TARGET_IMAGE:$TARGET_TAG to Render..."
+          
+          # Add context about what triggered this deployment
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "Deployment triggered by Docker image update"
+            echo "Source workflow run: ${{ github.event.client_payload.workflow_run_id }}"
+            echo "Trigger source: ${{ github.event.client_payload.trigger_source }}"
+          fi
+          
           curl -X POST "https://api.render.com/deploy/$RENDER_SERVICE_ID?key=${{ secrets.RENDER_DEPLOY_KEY }}"
           echo "Deployment triggered successfully!"
       
