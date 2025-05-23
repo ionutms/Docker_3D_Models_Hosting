@@ -2,11 +2,11 @@ name: Deploy 3D Model Server to Render
 
 on:
   workflow_dispatch:  # Manual trigger
-  push:
-    branches:
-      - main  # Run on commits to main branch
-  schedule:
-    - cron: '0 * * * *'  # Run at the start of every hour
+  # push:
+  #   branches:
+  #     - main  # Run on commits to main branch
+  # schedule:
+  #   - cron: '0 * * * *'  # Run at the start of every hour
   repository_dispatch:
     types: [docker-image-updated]  # Add this trigger
 
