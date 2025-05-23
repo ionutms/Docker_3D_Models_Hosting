@@ -436,6 +436,43 @@ def cleanup_model_files(models_dir):
         return False
 
 
+def delete_models_files(models_dir, targets_to_delete):
+    """Delete specific files or folders from the models directory.
+
+    Args:
+        models_dir (str): Path to the models directory
+        targets_to_delete (list): List of file or folder names to delete
+
+    Returns:
+        bool: True if all deletions were successful, False otherwise
+    """
+    print(f"\nDeleting specified files/folders from {models_dir}...")
+    errors = []
+
+    for target in targets_to_delete:
+        target_path = os.path.join(models_dir, target)
+        if os.path.exists(target_path):
+            try:
+                if os.path.isfile(target_path):
+                    os.remove(target_path)
+                    print(f"Deleted file: {target}")
+                elif os.path.isdir(target_path):
+                    shutil.rmtree(target_path)
+                    print(f"Deleted folder: {target}")
+            except Exception as e:
+                print(f"Error deleting {target}: {e}")
+                errors.append(target)
+        else:
+            print(f"Not found (skipped): {target}")
+
+    if errors:
+        print(f"\n⚠️ Errors occurred while deleting: {errors}")
+        return False
+
+    print("✅ Specified files/folders deleted successfully.")
+    return True
+
+
 if __name__ == "__main__":
     # The specific image to pull and rebuild
     IMAGE_NAME = "ionutms/3d-model-server:latest"
@@ -451,6 +488,9 @@ if __name__ == "__main__":
         extract_success = extract_models_from_image(
             IMAGE_NAME, "/usr/share/nginx/html/models", MODELS_DIR
         )
+
+    TARGETS_TO_DELETE = []
+    delete_models_files(MODELS_DIR, TARGETS_TO_DELETE)
 
     # Move any files from new_models to models (with overwrite)
     move_success = move_new_models_to_models(NEW_MODELS_DIR, MODELS_DIR)
