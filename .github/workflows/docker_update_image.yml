@@ -28,71 +28,68 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Get latest successful workflow run with artifacts
+    - name: Get latest artifacts from specific run
       if: github.event_name == 'repository_dispatch'
-      id: get_latest_run
+      id: get_artifacts
       run: |
-        echo "Getting latest workflow run with artifacts for: ${{ github.event.client_payload.source_repo }}"
-        echo "Looking for artifacts with name: ${{ github.event.client_payload.artifact_name }}"
+        echo "Getting artifacts from repository dispatch..."
+        SOURCE_REPO="${{ github.event.client_payload.source_repo }}"
+        RUN_ID="${{ github.event.client_payload.run_id }}"
+        ARTIFACT_NAME="${{ github.event.client_payload.artifact_name }}"
+        PROJECT_NAME="${{ github.event.client_payload.project_name }}"
         
-        # Get recent successful workflow runs, ordered by creation date descending
-        RUNS_JSON=$(curl -s \
-          -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/workflows/generate_kicad_3d_models.yml/runs?status=success&per_page=100&sort=created&direction=desc")
+        echo "Source repo: $SOURCE_REPO"
+        echo "Run ID: $RUN_ID"
+        echo "Artifact name: $ARTIFACT_NAME"
+        echo "Project name: $PROJECT_NAME"
         
-        FOUND_RUN_ID=""
-        
-        # Get list of run IDs into an array to avoid pipe subshell issues
-        # Process them in reverse order to check latest first if the API doesn't guarantee order
-        RUN_IDS=$(echo "$RUNS_JSON" | jq -r '.workflow_runs[].id')
-        
-        # Check each successful run for the required artifacts, starting with the most recent
-        for run_id in $RUN_IDS; do
-          if [ -n "$run_id" ] && [ -z "$FOUND_RUN_ID" ]; then
-            echo "Checking run $run_id for artifacts..."
-            
-            # Check if this run has the required artifact
-            ARTIFACTS_JSON=$(curl -s \
-              -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/runs/$run_id/artifacts")
-            
-            # Check if our specific artifact exists
-            ARTIFACT_EXISTS=$(echo "$ARTIFACTS_JSON" | jq -r --arg name "${{ github.event.client_payload.artifact_name }}" '.artifacts[] | select(.name == $name) | .id' | head -1)
-            
-            if [ -n "$ARTIFACT_EXISTS" ]; then
-              echo "✅ Found required artifact in run $run_id"
-              FOUND_RUN_ID="$run_id"
-              break # Exit loop once the latest run with the artifact is found
-            else
-              echo "Required artifact not found in run $run_id"
-            fi
-          fi
-        done
-        
-        if [ -z "$FOUND_RUN_ID" ]; then
-          echo "❌ No successful workflow run with required artifacts found"
-          exit 1
-        fi
-        
-        echo "latest_run_id=$FOUND_RUN_ID" >> $GITHUB_OUTPUT
-        
-        # Get run details for logging
+        # Verify the run exists and was successful
+        echo "Verifying workflow run..."
         RUN_DETAILS=$(curl -s \
           -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/runs/$FOUND_RUN_ID")
+          "https://api.github.com/repos/$SOURCE_REPO/actions/runs/$RUN_ID")
         
+        RUN_STATUS=$(echo "$RUN_DETAILS" | jq -r '.status')
+        RUN_CONCLUSION=$(echo "$RUN_DETAILS" | jq -r '.conclusion')
         RUN_DATE=$(echo "$RUN_DETAILS" | jq -r '.created_at')
         RUN_COMMIT=$(echo "$RUN_DETAILS" | jq -r '.head_sha[:7]')
-        RUN_TRIGGER=$(echo "$RUN_DETAILS" | jq -r '.event')
         
-        echo "✅ Selected workflow run:"
-        echo "  Run ID: $FOUND_RUN_ID"
-        echo "  Date: $RUN_DATE"
-        echo "  Commit: $RUN_COMMIT"
-        echo "  Triggered by: $RUN_TRIGGER"
+        echo "Run status: $RUN_STATUS"
+        echo "Run conclusion: $RUN_CONCLUSION"
+        echo "Run date: $RUN_DATE"
+        echo "Run commit: $RUN_COMMIT"
+        
+        if [ "$RUN_STATUS" != "completed" ] || [ "$RUN_CONCLUSION" != "success" ]; then
+          echo "❌ Workflow run $RUN_ID is not completed successfully"
+          echo "Status: $RUN_STATUS, Conclusion: $RUN_CONCLUSION"
+          exit 1
+        fi
+        
+        # Check if the specific artifact exists in this run
+        echo "Checking for artifact '$ARTIFACT_NAME' in run $RUN_ID..."
+        ARTIFACTS_JSON=$(curl -s \
+          -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/$SOURCE_REPO/actions/runs/$RUN_ID/artifacts")
+        
+        ARTIFACT_ID=$(echo "$ARTIFACTS_JSON" | jq -r --arg name "$ARTIFACT_NAME" '.artifacts[] | select(.name == $name) | .id')
+        ARTIFACT_SIZE=$(echo "$ARTIFACTS_JSON" | jq -r --arg name "$ARTIFACT_NAME" '.artifacts[] | select(.name == $name) | .size_in_bytes')
+        
+        if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+          echo "❌ Artifact '$ARTIFACT_NAME' not found in run $RUN_ID"
+          echo "Available artifacts:"
+          echo "$ARTIFACTS_JSON" | jq -r '.artifacts[].name'
+          exit 1
+        fi
+        
+        echo "✅ Found artifact '$ARTIFACT_NAME' with ID: $ARTIFACT_ID"
+        echo "Artifact size: $ARTIFACT_SIZE bytes"
+        
+        # Set outputs for the download step
+        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+        echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        echo "source_repo=$SOURCE_REPO" >> $GITHUB_OUTPUT
 
     - name: Download 3D models from source repository
       if: github.event_name == 'repository_dispatch'
@@ -100,9 +97,9 @@ jobs:
       with:
         github_token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         workflow: generate_kicad_3d_models.yml
-        repo: ${{ github.event.client_payload.source_repo }}
-        run_id: ${{ steps.get_latest_run.outputs.latest_run_id }}
-        name: ${{ github.event.client_payload.artifact_name }}
+        repo: ${{ steps.get_artifacts.outputs.source_repo }}
+        run_id: ${{ steps.get_artifacts.outputs.run_id }}
+        name: ${{ steps.get_artifacts.outputs.artifact_name }}
         path: ${{ env.NEW_MODELS_DIR }}
 
     - name: Verify downloaded artifacts
@@ -113,10 +110,19 @@ jobs:
         if [ -d "$ARTIFACT_PATH" ]; then
           echo "✅ Successfully downloaded artifacts to $ARTIFACT_PATH"
           echo "Contents:"
-          find "$ARTIFACT_PATH" -type f -exec ls -la {} \;
+          find "$ARTIFACT_PATH" -type f -exec ls -lh {} \;
           
           FILE_COUNT=$(find "$ARTIFACT_PATH" -type f | wc -l)
+          TOTAL_SIZE=$(find "$ARTIFACT_PATH" -type f -exec stat -f%z {} \; 2>/dev/null | awk '{sum+=$1} END {print sum}' || \
+                       find "$ARTIFACT_PATH" -type f -exec stat -c%s {} \; | awk '{sum+=$1} END {print sum}')
+          
           echo "Total files downloaded: ${FILE_COUNT}"
+          echo "Total size: ${TOTAL_SIZE} bytes"
+          
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "❌ No files found in downloaded artifacts"
+            exit 1
+          fi
         else
           echo "❌ Failed to download artifacts or directory not found"
           exit 1
@@ -134,7 +140,7 @@ jobs:
     - name: Pull existing Docker image
       run: |
         echo "Pulling Docker image: ${{ env.IMAGE_NAME }}"
-        docker pull ${{ env.IMAGE_NAME }}
+        docker pull ${{ env.IMAGE_NAME }} || echo "Image doesn't exist yet, will create new one"
 
     - name: Extract models from existing image
       run: |
@@ -143,26 +149,31 @@ jobs:
         # Create models directory
         mkdir -p ${{ env.MODELS_DIR }}
         
-        # Create a temporary container to extract files
-        CONTAINER_ID=$(docker create ${{ env.IMAGE_NAME }})
-        
-        # Extract the models directory from the container
-        if docker cp ${CONTAINER_ID}:/usr/share/nginx/html/models/. ${{ env.MODELS_DIR }}/; then
-          echo "✅ Successfully extracted model files to ${{ env.MODELS_DIR }}"
+        # Check if image exists and extract files
+        if docker image inspect ${{ env.IMAGE_NAME }} >/dev/null 2>&1; then
+          # Create a temporary container to extract files
+          CONTAINER_ID=$(docker create ${{ env.IMAGE_NAME }})
           
-          # List extracted files
-          echo "Extracted files:"
-          find ${{ env.MODELS_DIR }} -type f | head -20
+          # Extract the models directory from the container
+          if docker cp ${CONTAINER_ID}:/usr/share/nginx/html/models/. ${{ env.MODELS_DIR }}/ 2>/dev/null; then
+            echo "✅ Successfully extracted model files to ${{ env.MODELS_DIR }}"
+            
+            # List extracted files
+            echo "Extracted files:"
+            find ${{ env.MODELS_DIR }} -type f | head -20
+            
+            # Show total count
+            FILE_COUNT=$(find ${{ env.MODELS_DIR }} -type f | wc -l)
+            echo "Total files extracted: ${FILE_COUNT}"
+          else
+            echo "⚠️ No models directory found in image or extraction failed"
+          fi
           
-          # Show total count
-          FILE_COUNT=$(find ${{ env.MODELS_DIR }} -type f | wc -l)
-          echo "Total files extracted: ${FILE_COUNT}"
+          # Clean up the temporary container
+          docker rm ${CONTAINER_ID}
         else
-          echo "⚠️ No models directory found in image or extraction failed"
+          echo "⚠️ Image doesn't exist yet, starting with empty models directory"
         fi
-        
-        # Clean up the temporary container
-        docker rm ${CONTAINER_ID}
 
     - name: Move new models to models directory
       run: |
@@ -175,6 +186,10 @@ jobs:
           # Count files before moving
           NEW_FILE_COUNT=$(find ${{ env.NEW_MODELS_DIR }} -type f | wc -l)
           echo "Found ${NEW_FILE_COUNT} files to move from new_models directory"
+          
+          # Show what files we're moving
+          echo "Files to be moved:"
+          find ${{ env.NEW_MODELS_DIR }} -type f | head -10
           
           # Move files while preserving directory structure
           find ${{ env.NEW_MODELS_DIR }} -type f -print0 | while IFS= read -r -d '' file; do
@@ -216,6 +231,11 @@ jobs:
             echo "Sample files:"
             find ${{ env.MODELS_DIR }} -type f | head -10
             echo "..."
+            
+            # Show file types
+            echo "File types:"
+            find ${{ env.MODELS_DIR }} -type f -name "*.glb" | wc -l | sed 's/^/GLB files: /'
+            find ${{ env.MODELS_DIR }} -type f -name "*.wrl" | wc -l | sed 's/^/WRL files: /'
           else
             echo "⚠️ Warning: No files found in models directory"
           fi
@@ -271,6 +291,7 @@ jobs:
         if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
           echo "Triggered by KiCad 3D model generation from: ${{ github.event.client_payload.source_repo }}"
           echo "Project: ${{ github.event.client_payload.project_name }}"
+          echo "Run ID: ${{ github.event.client_payload.run_id }}"
         fi
         
         echo "Built and pushed with latest models and changes"
