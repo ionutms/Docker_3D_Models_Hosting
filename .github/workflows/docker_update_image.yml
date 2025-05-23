@@ -28,34 +28,66 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Get latest successful workflow run
+    - name: Get latest successful workflow run with artifacts
       if: github.event_name == 'repository_dispatch'
       id: get_latest_run
       run: |
-        echo "Getting latest successful workflow run for: ${{ github.event.client_payload.source_repo }}"
+        echo "Getting latest workflow run with artifacts for: ${{ github.event.client_payload.source_repo }}"
+        echo "Looking for artifacts with name: ${{ github.event.client_payload.artifact_name }}"
         
-        # Get the latest successful workflow run
-        LATEST_RUN=$(curl -s \
+        # Get recent successful workflow runs
+        RUNS_JSON=$(curl -s \
           -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/workflows/generate_kicad_3d_models.yml/runs?status=success&per_page=1" \
-          | jq -r '.workflow_runs[0]')
+          "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/workflows/generate_kicad_3d_models.yml/runs?status=success&per_page=10")
         
-        if [ "$LATEST_RUN" = "null" ]; then
-          echo "❌ No successful workflow runs found"
+        FOUND_RUN_ID=""
+        
+        # Check each successful run for the required artifacts
+        echo "$RUNS_JSON" | jq -r '.workflow_runs[].id' | while read -r run_id; do
+          if [ -n "$run_id" ] && [ -z "$FOUND_RUN_ID" ]; then
+            echo "Checking run $run_id for artifacts..."
+            
+            # Check if this run has the required artifact
+            ARTIFACTS_JSON=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/runs/$run_id/artifacts")
+            
+            # Check if our specific artifact exists
+            ARTIFACT_EXISTS=$(echo "$ARTIFACTS_JSON" | jq -r --arg name "${{ github.event.client_payload.artifact_name }}" '.artifacts[] | select(.name == $name) | .id' | head -1)
+            
+            if [ -n "$ARTIFACT_EXISTS" ]; then
+              echo "✅ Found required artifact in run $run_id"
+              FOUND_RUN_ID="$run_id"
+              echo "latest_run_id=$run_id" >> $GITHUB_OUTPUT
+              break
+            else
+              echo "Required artifact not found in run $run_id"
+            fi
+          fi
+        done
+        
+        if [ -z "$FOUND_RUN_ID" ]; then
+          echo "❌ No successful workflow run with required artifacts found"
           exit 1
         fi
         
-        LATEST_RUN_ID=$(echo "$LATEST_RUN" | jq -r '.id')
-        LATEST_RUN_DATE=$(echo "$LATEST_RUN" | jq -r '.created_at')
-        LATEST_RUN_COMMIT=$(echo "$LATEST_RUN" | jq -r '.head_sha[:7]')
+        # Get run details for logging
+        RUN_DETAILS=$(curl -s \
+          -H "Authorization: Bearer ${{ secrets.REPO_DISPATCH_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.event.client_payload.source_repo }}/actions/runs/$FOUND_RUN_ID")
         
-        echo "✅ Found latest successful run:"
-        echo "  Run ID: $LATEST_RUN_ID"
-        echo "  Date: $LATEST_RUN_DATE"
-        echo "  Commit: $LATEST_RUN_COMMIT"
+        RUN_DATE=$(echo "$RUN_DETAILS" | jq -r '.created_at')
+        RUN_COMMIT=$(echo "$RUN_DETAILS" | jq -r '.head_sha[:7]')
+        RUN_TRIGGER=$(echo "$RUN_DETAILS" | jq -r '.event')
         
-        echo "latest_run_id=$LATEST_RUN_ID" >> $GITHUB_OUTPUT
+        echo "✅ Selected workflow run:"
+        echo "  Run ID: $FOUND_RUN_ID"
+        echo "  Date: $RUN_DATE"
+        echo "  Commit: $RUN_COMMIT"
+        echo "  Triggered by: $RUN_TRIGGER"
 
     - name: Download 3D models from source repository
       if: github.event_name == 'repository_dispatch'
