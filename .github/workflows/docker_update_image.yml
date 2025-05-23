@@ -102,13 +102,12 @@ jobs:
         repo: ${{ github.event.client_payload.source_repo }}
         run_id: ${{ steps.get_latest_run.outputs.latest_run_id }}
         name: ${{ github.event.client_payload.artifact_name }}
-        path: ${{ env.NEW_MODELS_DIR }}/${{ github.event.client_payload.project_name }}
+        path: ${{ env.NEW_MODELS_DIR }}
 
     - name: Verify downloaded artifacts
       if: github.event_name == 'repository_dispatch'
       run: |
-        PROJECT_NAME="${{ github.event.client_payload.project_name }}"
-        ARTIFACT_PATH="${{ env.NEW_MODELS_DIR }}/${PROJECT_NAME}"
+        ARTIFACT_PATH="${{ env.NEW_MODELS_DIR }}"
         
         if [ -d "$ARTIFACT_PATH" ]; then
           echo "✅ Successfully downloaded artifacts to $ARTIFACT_PATH"
